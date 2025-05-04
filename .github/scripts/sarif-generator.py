@@ -1,107 +1,64 @@
 import json
 import hashlib
 
-def coordinates(filepath, target, returnType):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        text = f.read()
-    i = text.find(target)
-    if i == -1: return None
+# Load input and output templates
+with open('report.json') as f:
+    input_data = json.load(f)
 
-    lineStart = text[:i].count('\n') + 1
-    columnStart = i - text.rfind('\n', 0, i) if '\n' in text[:i] else i + 1
-    lineStart = lineStart + target.count('\n')
-    columnEnd = len(target.split('\n')[-1]) if '\n' in target else columnStart + len(target) - 1
+with open('./.github/scripts/output-format.json') as f:
+    output_template = json.load(f)
 
-    return {
-        0: lineStart,
-        1: columnStart,
-        2: lineStart,
-        3: columnEnd
-    }.get(returnType, [lineStart, columnStart, lineStart, columnEnd])
+# Initialize results list
+converted_results = []
 
-def findingType(types):
-    return f"Secret detected: {types}\nMatches: [{types}](0)"
+# Loop over each entry in input data
+for item in input_data['results']:
+    filename = item['filename']
+    for secret_type in item['types']:
+        secret_content = item['secrets']
+        line_number = int(list(item['lines'].keys())[0])
+        line_content = list(item['lines'].values())[0]
+        start_column = line_content.find(secret_content) + 1  # +1 to convert to 1-based indexing
+        end_column = start_column + len(secret_content) - 1
 
-def issues(finding):
-    issue = {}
-    issue["ruleId"] = str(finding.get("types", [])[0])
-    issue["level"] = "error"
-    issue["message"] = {
-        "text": findingType(finding.get("types", [])[0]),
-        "markdown": findingType(finding.get("types", [])[0])
-    }
-    issue["locations"] = [
-        {
-            "physicalLocation": {
-                "artifactLocation": {
-                    "uri": finding.get("filename")
-                },
-                "region": {
-                    "startLine": coordinates(finding.get("filename"), finding.get("secrets"), 0),
-                    "startColumn": coordinates(finding.get("filename"), finding.get("secrets"), 1),
-                    "endLine": coordinates(finding.get("filename"), finding.get("secrets"), 2),
-                    "endColumn": coordinates(finding.get("filename"), finding.get("secrets"), 3)
-                }
-            }
-        }
-    ]
-    issue["relatedLocations"] = [
-        {
-            "id": 0,
-            "physicalLocation": {
-                "artifactLocation": {
-                    "uri": finding.get("filename")
-                },
-                "region": {
-                    "startLine": coordinates(finding.get("filename"), finding.get("secrets"), 0),
-                    "startColumn": coordinates(finding.get("filename"), finding.get("secrets"), 1),
-                    "endLine": coordinates(finding.get("filename"), finding.get("secrets"), 2),
-                    "endColumn": coordinates(finding.get("filename"), finding.get("secrets"), 3)
-                }
-            },
+        # Compute partial fingerprint
+        # md5_hash = hashlib.md5(secret_content.encode()).hexdigest()
+        # sha256_hash = hashlib.sha256(md5_hash.encode()).hexdigest()
+
+        result = {
+            "ruleId": secret_type,
+            "level": "error",
             "message": {
-                "text": str(finding.get("types", [])[0])
-            }
-        }
-    ]
-    issue["partialFingerprints"] = {
-        "secret/v1": hashlib.sha256(finding.get("secrets").encode("UTF-8")).hexdigest()
-    }
-    return issue
-
-def formatting(input_path):
-    with open(input_path, 'r') as infile:
-        data = json.load(infile)
-
-    sarif = {
-        "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
-        "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "organization": "Yelp",
-                        "name": "Detect Secret (Yelp)",
-                        "version": "1.5.0",
-                        "informationUri": "https://github.com/Yelp/detect-secrets",
+                "text": secret_type,
+                "markdown": secret_type
+            },
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": filename
+                        },
+                        "region": {
+                            "startLine": line_number,
+                            "startColumn": start_column,
+                            "endLine": line_number,
+                            "endColumn": end_column
+                        }
                     }
-                },
-                "results": []
-            }
-        ]
-    }
+                }
+            ] #,
+            # "partialFingerprints": {
+            #     "secret/v1": sha256_hash
+            # }
+        }
 
-    results = sarif["runs"][0]["results"]
-    for finding in data.get("results", []):
-       results.append(issues(finding))
+        converted_results.append(result)
 
-    return sarif
+# Assign converted results to the output template
+output_template['runs'][0]['results'] = converted_results
 
-# Example usage
-if __name__ == "__main__":
-    data = formatting("report.json")
+# Save the output
+with open('results.sarif', 'w') as f:
+    json.dump(output_template, f, indent=4)
 
-    with open("results.sarif", 'w') as outfile:
-        json.dump(data , outfile, indent=4)
-
-    print(f"SARIF file generated successfully: results.sarif")
+print("Mapping complete. Output written to 'mapped-output.json'")
