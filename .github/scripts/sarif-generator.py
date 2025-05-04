@@ -45,9 +45,9 @@ def issues(finding):
             }
         }
     ]
-    issue["partialFingerprints"] = {
-        "secret/v1": hashlib.sha256(finding.get("secrets").encode("UTF-8")).hexdigest()
-    }
+    # issue["partialFingerprints"] = {
+    #     "secret/v1": hashlib.sha256(finding.get("secrets").encode("UTF-8")).hexdigest()
+    # }
     return issue
 
 def formatting(input_path):
